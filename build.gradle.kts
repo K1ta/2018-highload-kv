@@ -14,6 +14,10 @@ dependencies {
     // Annotations for better code documentation
     compile("com.intellij:annotations:12.0")
 
+    compile(group = "ru.odnoklassniki", name = "one-nio", version = "1.0.2")
+
+    compile("org.mapdb:mapdb:3.0.5")
+
     // JUnit Jupiter test framework
     testCompile("org.junit.jupiter:junit-jupiter-api:5.3.1")
 
