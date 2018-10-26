@@ -16,11 +16,8 @@
 
 package ru.mail.polis;
 
-import org.apache.http.HttpResponse;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -56,9 +53,7 @@ abstract class TestBase {
     }
 
     @NotNull
-    static byte[] payloadOf(@NotNull final HttpResponse response) throws IOException {
-        final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        response.getEntity().writeTo(byteArrayOutputStream);
-        return byteArrayOutputStream.toByteArray();
+    static String endpoint(final int port) {
+        return "http://localhost:" + port;
     }
 }

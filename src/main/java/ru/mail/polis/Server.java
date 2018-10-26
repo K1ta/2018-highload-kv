@@ -18,6 +18,7 @@ package ru.mail.polis;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
 
 /**
  * Starts storage and waits for shutdown
@@ -37,7 +38,11 @@ public final class Server {
 
         // Start the storage
         final KVDao dao = KVDaoFactory.create(data);
-        final KVService storage = KVServiceFactory.create(PORT, dao);
+        final KVService storage =
+                KVServiceFactory.create(
+                        PORT,
+                        dao,
+                        Collections.singleton("http://localhost:" + PORT));
         storage.start();
         Runtime.getRuntime().addShutdownHook(
                 new Thread(() -> {
