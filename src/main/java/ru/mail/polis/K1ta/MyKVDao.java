@@ -2,6 +2,8 @@ package ru.mail.polis.K1ta;
 
 import org.jetbrains.annotations.NotNull;
 import org.mapdb.*;
+import ru.mail.polis.K1ta.utils.Value;
+import ru.mail.polis.K1ta.utils.ValueSerializer;
 import ru.mail.polis.KVDao;
 
 import java.io.*;

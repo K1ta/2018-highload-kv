@@ -57,10 +57,6 @@ final class KVServiceFactory {
             throw new IllegalArgumentException("Port out of range");
         }
 
-        HttpServerConfig serverConfig = new HttpServerConfig();
-        AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = port;
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-        return new MyKVService(serverConfig, dao);
+        return new MyKVService(port, dao, topology);
     }
 }
