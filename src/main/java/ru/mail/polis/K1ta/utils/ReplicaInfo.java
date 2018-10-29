@@ -6,13 +6,10 @@ public class ReplicaInfo {
     private int from;
     private boolean isValid = false;
 
-    public ReplicaInfo(int ack, int from) {
-        this.ack = ack;
-        this.from = from;
-    }
-
-    public ReplicaInfo(String replicas) {
+    public ReplicaInfo(String replicas, int topologyLength) {
         if (replicas == null) {
+            ack = topologyLength / 2 + 1;
+            from = topologyLength;
             return;
         }
         String parts[] = replicas.split("/");

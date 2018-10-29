@@ -4,7 +4,7 @@ import java.io.Serializable;
 
 public class Value implements Serializable {
 
-    private byte[] data;
+    public byte[] data;
     private long timestamp;
     private int state;
 
