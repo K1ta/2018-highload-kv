@@ -34,10 +34,6 @@ public class MyKVService extends HttpServer implements KVService {
         serializer = new ValueSerializer();
         logger = Logger.getLogger(this.getClass().getName());
         System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s %2$s %5$s%6$s%n");
-
-        for(Map.Entry<String, HttpClient> node: nodes.entrySet()) {
-            logger.info("me=" + me + " | " + node.getKey() + " mapped to " + node.getValue().name());
-        }
     }
 
     private static HttpServerConfig getConfig(int port) {
@@ -78,16 +74,21 @@ public class MyKVService extends HttpServer implements KVService {
 
         boolean proxied = request.getHeader("proxied") != null;
 
+        logger.info("me = " + me + " proxied=" + proxied);
+
         switch (request.getMethod()) {
             case Request.METHOD_GET:
+                logger.info("case GET");
                 return !proxied ?
                         getProxied(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
                         get(id);
             case Request.METHOD_PUT:
+                logger.info("case PUT");
                 return !proxied ?
                         putProxied(id, request.getBody(), replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
                         put(id, request.getBody());
             case Request.METHOD_DELETE:
+                logger.info("case DELETE");
                 return !proxied ?
                         deleteProxied(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
                         delete(id);
@@ -283,7 +284,7 @@ public class MyKVService extends HttpServer implements KVService {
     private List<String> getNodes(String key, int length) {
         ArrayList<String> clients = new ArrayList<>();
         //сгенерировать номер ноды на основе hash(key)
-        int firstNodeId = key.hashCode() % topology.length;
+        int firstNodeId = (key.hashCode() & Integer.MAX_VALUE) % topology.length;
         clients.add(topology[firstNodeId]);
         //в цикле на увеличение добавить туда еще нод
         for (int i = 1; i < length; i++) {
