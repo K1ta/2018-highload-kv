@@ -8,16 +8,16 @@ public class Value implements Serializable {
     private long timestamp;
     private int state;
 
-    public static final byte[] EMPTY_DATA = new byte[]{};
+    public static final byte[] EMPTY_DATA = new byte[0];
     public static int PRESENT = 0;
     public static int DELETED = 1;
     public static int UNKNOWN = 2;
 
-    public Value() {
+    /*public Value() {
         data = EMPTY_DATA;
         timestamp = 0;
         state = UNKNOWN;
-    }
+    }*/
 
     public Value(byte[] value, long timestamp) {
         this.data = value;

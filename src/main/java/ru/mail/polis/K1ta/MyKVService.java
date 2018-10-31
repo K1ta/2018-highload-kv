@@ -100,24 +100,17 @@ public class MyKVService extends HttpServer implements KVService {
 
     private Response getProxied(String id, int ack, List<String> from) {
         logger.info("me = " + me + " getProxied with id=" + id);
-        int myAck = 0;
-        Value value = new Value();
+        List<Value> values = new ArrayList<>();
 
         for (String node : from) {
             if (node.equals(me)) {
                 try {
                     byte[] res = dao.get(id.getBytes());
                     Value resValue = serializer.deserialize(res);
-                    if (resValue.getTimestamp() > value.getTimestamp()) {
-                        value = resValue;
-                    }
-                    if (resValue.getState() == Value.DELETED) {
-                        logger.log(Level.INFO, "Element is deleted");
-                    }
-                    myAck++;
+                    values.add(resValue);
                 } catch (NoSuchElementException e) {
                     logger.log(Level.INFO, "No such element");
-                    myAck++;
+                    values.add(new Value(Value.EMPTY_DATA, 0, Value.UNKNOWN));
                 } catch (IOException e) {
                     logger.log(Level.SEVERE, "IO exception", e);
                 }
@@ -125,31 +118,27 @@ public class MyKVService extends HttpServer implements KVService {
                 try {
                     final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
                     if (response.getStatus() != 500) {
-                        myAck++;
-                    }
-                    if (response.getStatus() != 404) {
-                        byte[] res = response.getBody();
-                        String timestampHeader = response.getHeader("Timestamp");
-                        long timestamp;
-                        try {
-                            timestamp = Long.parseLong(timestampHeader);
-                        } catch (NumberFormatException e) {
-                            logger.log(Level.SEVERE, "wrong type of header", e);
-                            continue;
-                        }
-                        String stateHeader = response.getHeader("State");
-                        int state;
-                        try {
-                            state = Integer.parseInt(stateHeader);
-                        } catch (NumberFormatException e) {
-                            logger.log(Level.SEVERE, "wrong type of header", e);
-                            continue;
-                        }
-                        if (timestamp > value.getTimestamp()) {
-                            value = new Value(res, timestamp);
-                        }
-                        if (state == Value.DELETED) {
-                            return new Response(Response.NOT_FOUND, Response.EMPTY);
+                        if (response.getStatus() != 404) {
+                            byte[] res = response.getBody();
+                            String timestampHeader = response.getHeader("Timestamp");
+                            long timestamp;
+                            try {
+                                timestamp = Long.parseLong(timestampHeader);
+                            } catch (NumberFormatException e) {
+                                logger.log(Level.SEVERE, "wrong type of header", e);
+                                continue;
+                            }
+                            String stateHeader = response.getHeader("State");
+                            int state;
+                            try {
+                                state = Integer.parseInt(stateHeader);
+                            } catch (NumberFormatException e) {
+                                logger.log(Level.SEVERE, "wrong type of header", e);
+                                continue;
+                            }
+                            values.add(new Value(res, timestamp, state));
+                        } else {
+                            values.add(new Value(Value.EMPTY_DATA, 0, Value.UNKNOWN));
                         }
                     }
                 } catch (Exception e) {
@@ -157,14 +146,20 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             }
         }
-        if (myAck >= ack) {
-            logger.info("SUCCESS, " + myAck + "/" + from.size() + " timestamp = " + value.getTimestamp());
-            if (value.getState() == Value.DELETED || value.getState() == Value.UNKNOWN) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-            return new Response(Response.OK, value.getData());
+        if (values.stream().anyMatch(v -> v.getState() == Value.DELETED)) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        logger.info("ERROR, " + myAck + "/" + from.size());
+        List<Value> present = values.stream()
+                .filter(v -> v.getState() == Value.PRESENT || v.getState() == Value.UNKNOWN)
+                .collect(Collectors.toList());
+        if (present.size() >= ack) {
+            logger.info("SUCCESS, " + values.size() + "/" + from.size());
+            Value max = present.stream()
+                    .max(Comparator.comparingLong(Value::getTimestamp)).get();
+            return max.getState() == Value.UNKNOWN ?
+                    new Response(Response.NOT_FOUND, Response.EMPTY) :
+                    new Response(Response.OK, max.getData());
+        }
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
