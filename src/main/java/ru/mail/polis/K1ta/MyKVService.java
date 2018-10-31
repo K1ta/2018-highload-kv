@@ -1,5 +1,6 @@
 package ru.mail.polis.K1ta;
 
+import jdk.nashorn.internal.runtime.regexp.joni.exception.InternalException;
 import one.nio.http.*;
 import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
@@ -80,17 +81,17 @@ public class MyKVService extends HttpServer implements KVService {
             case Request.METHOD_GET:
                 logger.info("case GET");
                 return !proxied ?
-                        getProxied(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
+                        proxyGet(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
                         get(id);
             case Request.METHOD_PUT:
                 logger.info("case PUT");
                 return !proxied ?
-                        putProxied(id, request.getBody(), replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
+                        proxyPut(id, request.getBody(), replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
                         put(id, request.getBody());
             case Request.METHOD_DELETE:
                 logger.info("case DELETE");
                 return !proxied ?
-                        deleteProxied(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
+                        proxyDelete(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
                         delete(id);
         }
 
@@ -98,8 +99,8 @@ public class MyKVService extends HttpServer implements KVService {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
-    private Response getProxied(String id, int ack, List<String> from) {
-        logger.info("me = " + me + " getProxied with id=" + id);
+    private Response proxyGet(String id, int ack, List<String> from) {
+        logger.info("me = " + me + " proxyGet with id=" + id);
         List<Value> values = new ArrayList<>();
 
         for (String node : from) {
@@ -116,31 +117,11 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
-                    if (response.getStatus() != 500) {
-                        if (response.getStatus() != 404) {
-                            byte[] res = response.getBody();
-                            String timestampHeader = response.getHeader("Timestamp");
-                            long timestamp;
-                            try {
-                                timestamp = Long.parseLong(timestampHeader);
-                            } catch (NumberFormatException e) {
-                                logger.log(Level.SEVERE, "wrong type of header", e);
-                                continue;
-                            }
-                            String stateHeader = response.getHeader("State");
-                            int state;
-                            try {
-                                state = Integer.parseInt(stateHeader);
-                            } catch (NumberFormatException e) {
-                                logger.log(Level.SEVERE, "wrong type of header", e);
-                                continue;
-                            }
-                            values.add(new Value(res, timestamp, state));
-                        } else {
-                            values.add(new Value(Value.EMPTY_DATA, 0, Value.UNKNOWN));
-                        }
-                    }
+                    values.add(internalGet(id, node));
+                } catch (NumberFormatException e) {
+                    logger.log(Level.SEVERE, "wrong type of headers", e);
+                } catch (InternalException e) {
+                    logger.log(Level.SEVERE, "internal error on node " + node, e);
                 } catch (Exception e) {
                     logger.log(Level.SEVERE, "bad answer, no ack", e);
                 }
@@ -163,6 +144,23 @@ public class MyKVService extends HttpServer implements KVService {
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
+    private Value internalGet(String id, String node) throws Exception {
+        final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
+        if (response.getStatus() == 500) {
+            throw new InternalException("Not enough acks");
+        }
+        if (response.getStatus() != 404) {
+            byte[] res = response.getBody();
+            String timestampHeader = response.getHeader("Timestamp");
+            long timestamp = Long.parseLong(timestampHeader);
+            String stateHeader = response.getHeader("State");
+            int state = Integer.parseInt(stateHeader);
+            return new Value(res, timestamp, state);
+        } else {
+            return new Value(Value.EMPTY_DATA, 0, Value.UNKNOWN);
+        }
+    }
+
     private Response get(String id) {
         logger.info("me = " + me + " get with id=" + id);
         Response response;
@@ -180,8 +178,8 @@ public class MyKVService extends HttpServer implements KVService {
         return response;
     }
 
-    private Response putProxied(String id, byte[] value, int ack, List<String> from) {
-        logger.info("me = " + me + " putProxied with id=" + id);
+    private Response proxyPut(String id, byte[] value, int ack, List<String> from) {
+        logger.info("me = " + me + " proxyPut with id=" + id);
         int myAck = 0;
 
         for (String node : from) {
@@ -224,8 +222,8 @@ public class MyKVService extends HttpServer implements KVService {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    private Response deleteProxied(String id, int ack, List<String> from) {
-        logger.info("me = " + me + " deleteProxied with id=" + id);
+    private Response proxyDelete(String id, int ack, List<String> from) {
+        logger.info("me = " + me + " proxyDelete with id=" + id);
         int myAck = 0;
 
         for (String node : from) {

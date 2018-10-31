@@ -4,7 +4,6 @@ public class ReplicaInfo {
 
     private int ack;
     private int from;
-    private boolean isValid = false;
 
     public ReplicaInfo(String replicas, int topologyLength) {
         if (replicas == null) {
@@ -18,10 +17,9 @@ public class ReplicaInfo {
         }
         ack = Integer.parseInt(parts[0]);
         from = Integer.parseInt(parts[1]);
-        if (ack <= 0 || ack > from || from < 0) {
+        if (ack <= 0 || ack > from) {
             throw new IllegalArgumentException();
         }
-        isValid = true;
     }
 
     public int getAck() {
@@ -30,9 +28,5 @@ public class ReplicaInfo {
 
     public int getFrom() {
         return from;
-    }
-
-    public boolean isValid() {
-        return isValid;
     }
 }

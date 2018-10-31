@@ -7,7 +7,7 @@ import java.nio.ByteBuffer;
 public class ValueSerializer {
 
     public byte[] serialize(@NotNull Value value) {
-        int length = 12 + value.getData().length; //9 = long size + int size
+        int length = 12 + value.getData().length; //12 = long size + int size
         ByteBuffer buffer = ByteBuffer.allocate(length);
         buffer.putLong(value.getTimestamp());
         buffer.putInt(value.getState());

@@ -13,12 +13,6 @@ public class Value implements Serializable {
     public static int DELETED = 1;
     public static int UNKNOWN = 2;
 
-    /*public Value() {
-        data = EMPTY_DATA;
-        timestamp = 0;
-        state = UNKNOWN;
-    }*/
-
     public Value(byte[] value, long timestamp) {
         this.data = value;
         this.timestamp = timestamp;
