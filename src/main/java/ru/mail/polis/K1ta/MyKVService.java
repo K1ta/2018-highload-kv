@@ -1,12 +1,10 @@
 package ru.mail.polis.K1ta;
 
-import jdk.nashorn.internal.runtime.regexp.joni.exception.InternalException;
 import one.nio.http.*;
 import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import ru.mail.polis.K1ta.utils.ReplicaInfo;
 import ru.mail.polis.K1ta.utils.Value;
 import ru.mail.polis.K1ta.utils.ValueSerializer;
@@ -124,8 +122,6 @@ public class MyKVService extends HttpServer implements KVService {
                     logger.info("Add to list " + resValue.toString());
                 } catch (NumberFormatException e) {
                     logger.error("Wrong type of headers", e);
-                } catch (InternalException e) {
-                    logger.error("internal error on node " + node, e);
                 } catch (Exception e) {
                     logger.error("Bad answer, no ack", e);
                 }
@@ -152,7 +148,7 @@ public class MyKVService extends HttpServer implements KVService {
         logger.info("id=" + id);
         final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
         if (response.getStatus() == 500) {
-            throw new InternalException("Not enough acks");
+            throw new Exception("Not enough acks");
         }
         if (response.getStatus() != 404) {
             byte[] res = response.getBody();
