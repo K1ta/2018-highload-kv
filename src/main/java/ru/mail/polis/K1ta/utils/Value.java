@@ -6,20 +6,23 @@ public class Value implements Serializable {
 
     public byte[] data;
     private long timestamp;
-    private int state;
+    private stateCode state;
 
     public static final byte[] EMPTY_DATA = new byte[0];
-    public static int PRESENT = 0;
-    public static int DELETED = 1;
-    public static int UNKNOWN = 2;
+
+    public enum stateCode {
+        PRESENT,
+        DELETED,
+        UNKNOWN
+    }
 
     public Value(byte[] value, long timestamp) {
         this.data = value;
         this.timestamp = timestamp;
-        state = PRESENT;
+        state = stateCode.PRESENT;
     }
 
-    public Value(byte[] value, long timestamp, int state) {
+    public Value(byte[] value, long timestamp, stateCode state) {
         this.data = value;
         this.timestamp = timestamp;
         this.state = state;
@@ -33,7 +36,7 @@ public class Value implements Serializable {
         return timestamp;
     }
 
-    public int getState() {
+    public stateCode getState() {
         return state;
     }
 

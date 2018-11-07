@@ -80,19 +80,19 @@ public class MyKVService extends HttpServer implements KVService {
         switch (request.getMethod()) {
             case Request.METHOD_GET:
                 logger.info("case GET");
-                return !proxied ?
-                        proxyGet(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
-                        get(id);
+                return proxied ?
+                        get(id) :
+                        proxyGet(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()));
             case Request.METHOD_PUT:
                 logger.info("case PUT");
-                return !proxied ?
-                        proxyPut(id, request.getBody(), replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
-                        put(id, request.getBody());
+                return proxied ?
+                        put(id, request.getBody()) :
+                        proxyPut(id, request.getBody(), replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()));
             case Request.METHOD_DELETE:
                 logger.info("case DELETE");
-                return !proxied ?
-                        proxyDelete(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom())) :
-                        delete(id);
+                return proxied ?
+                        delete(id) :
+                        proxyDelete(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()));
         }
 
         logger.info("me = " + me + " Method not allowed");
@@ -111,7 +111,7 @@ public class MyKVService extends HttpServer implements KVService {
                     values.add(resValue);
                 } catch (NoSuchElementException e) {
                     logger.log(Level.INFO, "No such element");
-                    values.add(new Value(Value.EMPTY_DATA, 0, Value.UNKNOWN));
+                    values.add(new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN));
                 } catch (IOException e) {
                     logger.log(Level.SEVERE, "IO exception", e);
                 }
@@ -127,17 +127,17 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             }
         }
-        if (values.stream().anyMatch(v -> v.getState() == Value.DELETED)) {
+        if (values.stream().anyMatch(v -> v.getState() == Value.stateCode.DELETED)) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         List<Value> present = values.stream()
-                .filter(v -> v.getState() == Value.PRESENT || v.getState() == Value.UNKNOWN)
+                .filter(v -> v.getState() == Value.stateCode.PRESENT || v.getState() == Value.stateCode.UNKNOWN)
                 .collect(Collectors.toList());
         if (present.size() >= ack) {
             logger.info("SUCCESS, " + values.size() + "/" + from.size());
             Value max = present.stream()
                     .max(Comparator.comparingLong(Value::getTimestamp)).get();
-            return max.getState() == Value.UNKNOWN ?
+            return max.getState() == Value.stateCode.UNKNOWN ?
                     new Response(Response.NOT_FOUND, Response.EMPTY) :
                     new Response(Response.OK, max.getData());
         }
@@ -153,11 +153,10 @@ public class MyKVService extends HttpServer implements KVService {
             byte[] res = response.getBody();
             String timestampHeader = response.getHeader("Timestamp");
             long timestamp = Long.parseLong(timestampHeader);
-            String stateHeader = response.getHeader("State");
-            int state = Integer.parseInt(stateHeader);
-            return new Value(res, timestamp, state);
+            String state = response.getHeader("State");
+            return new Value(res, timestamp, Value.stateCode.valueOf(state));
         } else {
-            return new Value(Value.EMPTY_DATA, 0, Value.UNKNOWN);
+            return new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN);
         }
     }
 
@@ -186,7 +185,8 @@ public class MyKVService extends HttpServer implements KVService {
             if (node.equals(me)) {
                 Value val = new Value(value, System.currentTimeMillis());
                 try {
-                    dao.upsert(id.getBytes(), serializer.serialize(val));
+                    byte[] ser = serializer.serialize(val);
+                    dao.upsert(id.getBytes(), ser);
                     myAck++;
                 } catch (IOException e) {
                     logger.log(Level.SEVERE, "IOException with id=" + id + " me=" + me, e);
@@ -228,7 +228,7 @@ public class MyKVService extends HttpServer implements KVService {
 
         for (String node : from) {
             if (node.equals(me)) {
-                Value val = new Value(Value.EMPTY_DATA, System.currentTimeMillis(), Value.DELETED);
+                Value val = new Value(Value.EMPTY_DATA, System.currentTimeMillis(), Value.stateCode.DELETED);
                 try {
                     byte[] ser = serializer.serialize(val);
                     dao.upsert(id.getBytes(), ser);
@@ -238,7 +238,7 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    Value val = new Value(Value.EMPTY_DATA, System.currentTimeMillis(), Value.DELETED);
+                    Value val = new Value(Value.EMPTY_DATA, System.currentTimeMillis(), Value.stateCode.DELETED);
                     byte[] value = serializer.serialize(val);
                     final Response response = nodes.get(node).put("/v0/entity?id=" + id, value, "proxied: true");
                     if (response.getStatus() != 500) {
@@ -261,7 +261,7 @@ public class MyKVService extends HttpServer implements KVService {
     private Response delete(String id) {
         logger.info("me = " + me + " delete with id=" + id);
         try {
-            Value val = new Value(Value.EMPTY_DATA, System.currentTimeMillis(), Value.DELETED);
+            Value val = new Value(Value.EMPTY_DATA, System.currentTimeMillis(), Value.stateCode.DELETED);
             dao.upsert(id.getBytes(), serializer.serialize(val));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -275,7 +275,7 @@ public class MyKVService extends HttpServer implements KVService {
     }
 
     private List<String> getNodes(String key, int length) {
-        ArrayList<String> clients = new ArrayList<>();
+        final List<String> clients = new ArrayList<>();
         //сгенерировать номер ноды на основе hash(key)
         int firstNodeId = (key.hashCode() & Integer.MAX_VALUE) % topology.length;
         clients.add(topology[firstNodeId]);
