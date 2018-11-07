@@ -128,6 +128,7 @@ public class MyKVService extends HttpServer implements KVService {
             }
         }
         if (values.stream().anyMatch(v -> v.getState() == Value.stateCode.DELETED)) {
+            logger.info("Value is deleted");
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         List<Value> present = values.stream()
@@ -141,23 +142,24 @@ public class MyKVService extends HttpServer implements KVService {
                     new Response(Response.NOT_FOUND, Response.EMPTY) :
                     new Response(Response.OK, max.getData());
         }
+        logger.info("FAIL, " + values.size() + "/" + from.size());
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
     private Value internalGet(String id, String node) throws Exception {
         logger.info("id=" + id);
         final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
-        if (response.getStatus() == 500) {
-            throw new Exception("Not enough acks");
-        }
-        if (response.getStatus() != 404) {
-            byte[] res = response.getBody();
-            String timestampHeader = response.getHeader("Timestamp");
-            long timestamp = Long.parseLong(timestampHeader);
-            String state = response.getHeader("State");
-            return new Value(res, timestamp, Value.stateCode.valueOf(state));
-        } else {
-            return new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN);
+        switch (response.getStatus()) {
+            case 500:
+                throw new Exception("Internal error on node");
+            case 404:
+                return new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN);
+            default:
+                byte[] res = response.getBody();
+                String timestampHeader = response.getHeader("Timestamp");
+                long timestamp = Long.parseLong(timestampHeader);
+                String state = response.getHeader("State");
+                return new Value(res, timestamp, Value.stateCode.valueOf(state));
         }
     }
 
@@ -185,8 +187,7 @@ public class MyKVService extends HttpServer implements KVService {
             if (node.equals(me)) {
                 Value val = new Value(value);
                 try {
-                    byte[] ser = serializer.serialize(val);
-                    dao.upsert(id.getBytes(), ser);
+                    dao.upsert(id.getBytes(), serializer.serialize(val));
                     myAck++;
                 } catch (IOException e) {
                     logger.error("IOException with id=" + id, e);
@@ -229,9 +230,8 @@ public class MyKVService extends HttpServer implements KVService {
         for (String node : from) {
             if (node.equals(me)) {
                 Value val = new Value();
-                byte[] ser = serializer.serialize(val);
                 try {
-                    dao.upsert(id.getBytes(), ser);
+                    dao.upsert(id.getBytes(), serializer.serialize(val));
                     myAck++;
                 } catch (IOException e) {
                     logger.error("IOException with id=" + id, e);
@@ -271,6 +271,8 @@ public class MyKVService extends HttpServer implements KVService {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
+        logger.info(request.getURI());
+        logger.debug(request.toString());
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 

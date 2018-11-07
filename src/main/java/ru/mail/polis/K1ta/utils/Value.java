@@ -49,7 +49,7 @@ public class Value implements Serializable {
 
     @Override
     public String toString() {
-        return "value[timestamp: " + new Date(timestamp) + " state: " + state.name() + "]";
+        return "value[timestamp: " + new Date(timestamp) + "; state: " + state.name() + "]";
     }
 
 }
