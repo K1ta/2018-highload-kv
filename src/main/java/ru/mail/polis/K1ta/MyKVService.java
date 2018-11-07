@@ -33,6 +33,7 @@ public class MyKVService extends HttpServer implements KVService {
                 o -> new HttpClient(new ConnectionString(o))));
         serializer = ValueSerializer.getInstance();
         logger = LoggerFactory.getLogger(MyKVService.class);
+        logger.info("Service created, me=" + me);
     }
 
     private static HttpServerConfig getConfig(int port) {
@@ -87,12 +88,12 @@ public class MyKVService extends HttpServer implements KVService {
                 logger.debug("case PUT");
                 return proxied ?
                         put(id, request.getBody()) :
-                        proxyPut(id, request.getBody(), replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()));
+                        proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), true, request.getBody());
             case Request.METHOD_DELETE:
                 logger.debug("case DELETE");
                 return proxied ?
                         delete(id) :
-                        proxyDelete(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()));
+                        proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), false, Value.EMPTY_DATA);
         }
 
         logger.debug("Method not allowed");
@@ -180,33 +181,40 @@ public class MyKVService extends HttpServer implements KVService {
         return response;
     }
 
-    private Response proxyPut(String id, byte[] value, int ack, List<String> from) {
-        logger.info("id=" + id);
+    private Response proxyUpsert(String id, int ack, List<String> from, boolean put, byte[] value) {
+        logger.info("id=" + id + " type=" + (put ? "PUT" : "DELETE"));
         int myAck = 0;
+
+        Value val = put ? new Value(value) : new Value();
         for (String node : from) {
             if (node.equals(me)) {
-                Value val = new Value(value);
                 try {
                     dao.upsert(id.getBytes(), serializer.serialize(val));
                     myAck++;
+                    logger.info("Get ack from " + node);
                 } catch (IOException e) {
                     logger.error("IOException with id=" + id, e);
                 }
             } else {
                 try {
-                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, value, "Proxied: true");
+                    final Response response = put ?
+                            nodes.get(node).put("/v0/entity?id=" + id, value, "Proxied: true") :
+                            nodes.get(node).delete("/v0/entity?id=" + id, "Proxied: true");
                     if (response.getStatus() != 500) {
                         myAck++;
+                        logger.info("Get ack from " + node);
                     }
                 } catch (Exception e) {
-                    logger.error("Bad answer, no ack", e);
+                    logger.error("Bad answer, no ack from node " + node, e);
                 }
             }
         }
 
         if (myAck >= ack) {
             logger.info("SUCCESS, " + myAck + "/" + from.size());
-            return new Response(Response.CREATED, Response.EMPTY);
+            return put ?
+                    new Response(Response.CREATED, Response.EMPTY) :
+                    new Response(Response.ACCEPTED, Response.EMPTY);
         }
         logger.info("FAIL, " + myAck + "/" + from.size());
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
@@ -221,41 +229,6 @@ public class MyKVService extends HttpServer implements KVService {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    private Response proxyDelete(String id, int ack, List<String> from) {
-        logger.info("id=" + id);
-        int myAck = 0;
-
-        for (String node : from) {
-            if (node.equals(me)) {
-                Value val = new Value();
-                try {
-                    dao.upsert(id.getBytes(), serializer.serialize(val));
-                    myAck++;
-                } catch (IOException e) {
-                    logger.error("IOException with id=" + id, e);
-                }
-            } else {
-                try {
-                    Value val = new Value();
-                    byte[] value = serializer.serialize(val);
-                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, value, "Proxied: true");
-                    if (response.getStatus() != 500) {
-                        myAck++;
-                    }
-                } catch (Exception e) {
-                    logger.error("bad answer, no ack, me=" + me, e);
-                }
-            }
-        }
-
-        if (myAck >= ack) {
-            logger.info("SUCCESS, " + myAck + "/" + from.size());
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        }
-        logger.info("FAIL, " + myAck + "/" + from.size());
-        return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
     private Response delete(String id) {
