@@ -31,7 +31,7 @@ public class MyKVService extends HttpServer implements KVService {
         nodes = topology.stream().collect(Collectors.toMap(
                 o -> o,
                 o -> new HttpClient(new ConnectionString(o))));
-        serializer = new ValueSerializer();
+        serializer = ValueSerializer.getInstance();
         logger = LoggerFactory.getLogger(MyKVService.class);
     }
 

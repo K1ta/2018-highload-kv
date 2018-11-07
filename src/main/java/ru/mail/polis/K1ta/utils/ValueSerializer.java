@@ -6,6 +6,14 @@ import java.nio.ByteBuffer;
 
 public class ValueSerializer {
 
+    private static class ValueSerializerHolder {
+        private static final ValueSerializer INSTANCE = new ValueSerializer();
+    }
+
+    public static ValueSerializer getInstance() {
+        return ValueSerializerHolder.INSTANCE;
+    }
+
     public byte[] serialize(@NotNull Value value) {
         byte[] state = value.getState().name().getBytes();
         int length = 12 + state.length + value.getData().length; //12 = long size + int size
