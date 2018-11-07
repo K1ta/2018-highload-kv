@@ -27,6 +27,11 @@ dependencies {
 
     // Guava for tests
     testCompile("com.google.guava:guava:23.1-jre")
+
+    //logging
+    compile (group = "org.slf4j", name = "slf4j-api", version = "1.7.2")
+    compile (group = "ch.qos.logback", name = "logback-classic", version = "1.0.9")
+    compile (group = "ch.qos.logback", name = "logback-core", version = "1.0.9")
 }
 
 tasks {

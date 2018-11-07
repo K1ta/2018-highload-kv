@@ -1,6 +1,7 @@
 package ru.mail.polis.K1ta.utils;
 
 import java.io.Serializable;
+import java.util.Date;
 
 public class Value implements Serializable {
 
@@ -16,9 +17,15 @@ public class Value implements Serializable {
         UNKNOWN
     }
 
-    public Value(byte[] value, long timestamp) {
+    public Value() {
+        this.data = EMPTY_DATA;
+        this.timestamp = System.currentTimeMillis();
+        this.state = stateCode.DELETED;
+    }
+
+    public Value(byte[] value) {
         this.data = value;
-        this.timestamp = timestamp;
+        this.timestamp = System.currentTimeMillis();
         state = stateCode.PRESENT;
     }
 
@@ -38,6 +45,11 @@ public class Value implements Serializable {
 
     public stateCode getState() {
         return state;
+    }
+
+    @Override
+    public String toString() {
+        return "value[timestamp: " + new Date(timestamp) + " state: " + state.name() + "]";
     }
 
 }
