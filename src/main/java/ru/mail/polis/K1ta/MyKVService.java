@@ -73,9 +73,9 @@ public class MyKVService extends HttpServer implements KVService {
 
         logger.debug("ack=" + replicaInfo.getAck() + " from=" + replicaInfo.getFrom());
 
-        boolean proxied = request.getHeader("proxied") != null;
+        boolean proxied = request.getHeader("Proxied") != null;
 
-        logger.info("proxied=" + proxied);
+        logger.info("Proxied=" + proxied);
 
         switch (request.getMethod()) {
             case Request.METHOD_GET:
@@ -148,7 +148,7 @@ public class MyKVService extends HttpServer implements KVService {
 
     private Value internalGet(String id, String node) throws Exception {
         logger.info("id=" + id);
-        final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
+        final Response response = nodes.get(node).get("/v0/entity?id=" + id, "Proxied: true");
         switch (response.getStatus()) {
             case 500:
                 throw new Exception("Internal error on node");
@@ -194,7 +194,7 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, value, "proxied: true");
+                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, value, "Proxied: true");
                     if (response.getStatus() != 500) {
                         myAck++;
                     }
@@ -240,7 +240,7 @@ public class MyKVService extends HttpServer implements KVService {
                 try {
                     Value val = new Value();
                     byte[] value = serializer.serialize(val);
-                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, value, "proxied: true");
+                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, value, "Proxied: true");
                     if (response.getStatus() != 500) {
                         myAck++;
                     }
