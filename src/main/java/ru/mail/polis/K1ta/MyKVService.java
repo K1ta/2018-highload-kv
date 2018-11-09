@@ -128,20 +128,18 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             }
         }
-        if (values.stream().anyMatch(v -> v.getState() == Value.stateCode.DELETED)) {
-            logger.info("Value is deleted");
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        List<Value> present = values.stream()
-                .filter(v -> v.getState() == Value.stateCode.PRESENT || v.getState() == Value.stateCode.UNKNOWN)
-                .collect(Collectors.toList());
-        if (present.size() >= ack) {
+        if (values.size() >= ack) {
             logger.info("SUCCESS, " + values.size() + "/" + from.size());
-            Value max = present.stream()
-                    .max(Comparator.comparingLong(Value::getTimestamp)).get();
-            return max.getState() == Value.stateCode.UNKNOWN ?
-                    new Response(Response.NOT_FOUND, Response.EMPTY) :
-                    new Response(Response.OK, max.getData());
+            Value max = values.stream()
+                    .max(Comparator.comparingLong(Value::getTimestamp))
+                    .get();
+            switch (max.getState()) {
+                case UNKNOWN:
+                case DELETED:
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                case PRESENT:
+                    return new Response(Response.OK, max.getData());
+            }
         }
         logger.info("FAIL, " + values.size() + "/" + from.size());
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
