@@ -14,7 +14,7 @@ public class RequestInfo {
         }
         this.id = id;
         // check if proxied
-        this.proxied = proxied != null && proxied.equals("true");
+        this.proxied = proxied != null;
         // calculate ack and from
         if (replicas == null) {
             ack = topologyLength / 2 + 1;

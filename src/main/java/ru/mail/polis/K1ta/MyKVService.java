@@ -56,7 +56,7 @@ public class MyKVService extends HttpServer implements KVService {
             Request request,
             @Param(value = "id") String id,
             @Param(value = "replicas") String replicas) {
-        logger.info(request.getURI());
+        logger.info(request.getURI() + " type=" + request.getMethod());
         logger.debug(request.toString());
 
         RequestInfo requestInfo;
@@ -78,12 +78,12 @@ public class MyKVService extends HttpServer implements KVService {
             case Request.METHOD_PUT:
                 logger.debug("case PUT");
                 return requestInfo.isProxied() ?
-                        internalUpsert(id, new Value(request.getBody())) :
+                        put(id, request.getBody()) :
                         proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), true, request.getBody());
             case Request.METHOD_DELETE:
                 logger.debug("case DELETE");
                 return requestInfo.isProxied() ?
-                        internalUpsert(id, new Value()) :
+                        delete(id) :
                         proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), false, Value.EMPTY_DATA);
         }
 
@@ -109,13 +109,23 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    Value resValue = internalGet(id, node);
-                    values.add(resValue);
-                    logger.info("Add to list " + resValue.toString());
-                } catch (NumberFormatException e) {
-                    logger.error("Wrong type of headers", e);
+                    final Response response = nodes.get(node).get("/v0/entity?id=" + id, "Proxied: true");
+                    switch (response.getStatus()) {
+                        case 500:
+                            logger.error("Bad answer, no ack");
+                        case 404:
+                            logger.info("Add to list unknown value");
+                            values.add(Value.UNKNOWN);
+                        default:
+                            byte[] data = response.getBody();
+                            long timestamp = Long.parseLong(response.getHeader("Timestamp"));
+                            String state = response.getHeader("State");
+                            Value value = new Value(data, timestamp, Value.stateCode.valueOf(state));
+                            values.add(value);
+                            logger.info("Add to list " + value.toString());
+                    }
                 } catch (Exception e) {
-                    logger.error("Bad answer, no ack", e);
+                    logger.error("Error on request, no ack", e);
                 }
             }
         }
@@ -136,38 +146,20 @@ public class MyKVService extends HttpServer implements KVService {
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
-    private Value internalGet(String id, String node) throws Exception {
-        logger.info("id=" + id);
-        final Response response = nodes.get(node).get("/v0/entity?id=" + id, "Proxied: true");
-        switch (response.getStatus()) {
-            case 500:
-                throw new Exception("Internal error on node");
-            case 404:
-                return Value.UNKNOWN;
-            default:
-                byte[] res = response.getBody();
-                String timestampHeader = response.getHeader("Timestamp");
-                long timestamp = Long.parseLong(timestampHeader);
-                String state = response.getHeader("State");
-                return new Value(res, timestamp, Value.stateCode.valueOf(state));
-        }
-    }
-
     private Response get(String id) {
         logger.info("id=" + id);
-        Response response;
         try {
             byte[] res = dao.get(id.getBytes());
             Value value = serializer.deserialize(res);
-            response = new Response(Response.OK, value.getData());
+            Response response = new Response(Response.OK, value.getData());
             response.addHeader("Timestamp" + value.getTimestamp());
             response.addHeader("State" + value.getState());
+            return response;
         } catch (NoSuchElementException e) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        return response;
     }
 
     private Response proxyUpsert(String id, int ack, List<String> from, boolean put, byte[] value) {
@@ -209,14 +201,24 @@ public class MyKVService extends HttpServer implements KVService {
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
-    private Response internalUpsert(String id, Value value) {
+    private Response put(String id, byte[] value) {
         logger.info("id=" + id);
         try {
-            dao.upsert(id.getBytes(), serializer.serialize(value));
+            dao.upsert(id.getBytes(), serializer.serialize(new Value(value)));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.CREATED, Response.EMPTY);
+    }
+
+    private Response delete(String id) {
+        logger.info("id=" + id);
+        try {
+            dao.upsert(id.getBytes(), serializer.serialize(new Value()));
+        } catch (IOException e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
