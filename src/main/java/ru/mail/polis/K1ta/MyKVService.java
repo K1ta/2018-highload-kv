@@ -5,7 +5,7 @@ import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.mail.polis.K1ta.utils.ReplicaInfo;
+import ru.mail.polis.K1ta.utils.RequestInfo;
 import ru.mail.polis.K1ta.utils.Value;
 import ru.mail.polis.K1ta.utils.ValueSerializer;
 import ru.mail.polis.KVDao;
@@ -59,41 +59,32 @@ public class MyKVService extends HttpServer implements KVService {
         logger.info(request.getURI());
         logger.debug(request.toString());
 
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        logger.debug("id=" + id);
-
-        ReplicaInfo replicaInfo;
+        RequestInfo requestInfo;
         try {
-            replicaInfo = new ReplicaInfo(replicas, topology.length);
+            requestInfo = new RequestInfo(id, replicas, topology.length, request.getHeader("Proxied"));
         } catch (IllegalArgumentException e) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-
-        logger.debug("ack=" + replicaInfo.getAck() + " from=" + replicaInfo.getFrom());
-
-        boolean proxied = request.getHeader("Proxied") != null;
-
-        logger.info("Proxied=" + proxied);
+        logger.debug("id = " + requestInfo.getId());
+        logger.debug("ack=" + requestInfo.getAck() + " from=" + requestInfo.getFrom());
+        logger.info("Proxied=" + requestInfo.isProxied());
 
         switch (request.getMethod()) {
             case Request.METHOD_GET:
                 logger.debug("case GET");
-                return proxied ?
+                return requestInfo.isProxied() ?
                         get(id) :
-                        proxyGet(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()));
+                        proxyGet(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()));
             case Request.METHOD_PUT:
                 logger.debug("case PUT");
-                return proxied ?
+                return requestInfo.isProxied() ?
                         internalUpsert(id, new Value(request.getBody())) :
-                        proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), true, request.getBody());
+                        proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), true, request.getBody());
             case Request.METHOD_DELETE:
                 logger.debug("case DELETE");
-                return proxied ?
+                return requestInfo.isProxied() ?
                         internalUpsert(id, new Value()) :
-                        proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), false, Value.EMPTY_DATA);
+                        proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), false, Value.EMPTY_DATA);
         }
 
         logger.debug("Method not allowed");
