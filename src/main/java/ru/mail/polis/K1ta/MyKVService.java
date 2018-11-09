@@ -87,12 +87,12 @@ public class MyKVService extends HttpServer implements KVService {
             case Request.METHOD_PUT:
                 logger.debug("case PUT");
                 return proxied ?
-                        put(id, request.getBody()) :
+                        internalUpsert(id, new Value(request.getBody())) :
                         proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), true, request.getBody());
             case Request.METHOD_DELETE:
                 logger.debug("case DELETE");
                 return proxied ?
-                        delete(id) :
+                        internalUpsert(id, new Value()) :
                         proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), false, Value.EMPTY_DATA);
         }
 
@@ -218,26 +218,14 @@ public class MyKVService extends HttpServer implements KVService {
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
-    private Response put(String id, byte[] value) {
+    private Response internalUpsert(String id, Value value) {
         logger.info("id=" + id);
         try {
-            Value val = new Value(value);
-            dao.upsert(id.getBytes(), serializer.serialize(val));
+            dao.upsert(id.getBytes(), serializer.serialize(value));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    private Response delete(String id) {
-        logger.info("id=" + id);
-        try {
-            Value val = new Value();
-            dao.upsert(id.getBytes(), serializer.serialize(val));
-        } catch (IOException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
