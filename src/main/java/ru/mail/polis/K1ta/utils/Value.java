@@ -11,6 +11,8 @@ public class Value implements Serializable {
 
     public static final byte[] EMPTY_DATA = new byte[0];
 
+    public static final Value UNKNOWN = new Value(EMPTY_DATA, 0, stateCode.UNKNOWN);
+
     public enum stateCode {
         PRESENT,
         DELETED,

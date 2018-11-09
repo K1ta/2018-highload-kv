@@ -112,7 +112,7 @@ public class MyKVService extends HttpServer implements KVService {
                     logger.info("Add to list " + resValue.toString());
                 } catch (NoSuchElementException e) {
                     logger.error("No such element", e);
-                    values.add(new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN));
+                    values.add(Value.UNKNOWN);
                 } catch (IOException e) {
                     logger.error("IO exception", e);
                 }
@@ -132,7 +132,7 @@ public class MyKVService extends HttpServer implements KVService {
             logger.info("SUCCESS, " + values.size() + "/" + from.size());
             Value max = values.stream()
                     .max(Comparator.comparingLong(Value::getTimestamp))
-                    .get();
+                    .orElse(Value.UNKNOWN);
             switch (max.getState()) {
                 case UNKNOWN:
                 case DELETED:
@@ -152,7 +152,7 @@ public class MyKVService extends HttpServer implements KVService {
             case 500:
                 throw new Exception("Internal error on node");
             case 404:
-                return new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN);
+                return Value.UNKNOWN;
             default:
                 byte[] res = response.getBody();
                 String timestampHeader = response.getHeader("Timestamp");
