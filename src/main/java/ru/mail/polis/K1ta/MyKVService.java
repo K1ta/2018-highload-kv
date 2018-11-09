@@ -5,7 +5,7 @@ import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.mail.polis.K1ta.utils.ReplicaInfo;
+import ru.mail.polis.K1ta.utils.RequestInfo;
 import ru.mail.polis.K1ta.utils.Value;
 import ru.mail.polis.K1ta.utils.ValueSerializer;
 import ru.mail.polis.KVDao;
@@ -56,44 +56,35 @@ public class MyKVService extends HttpServer implements KVService {
             Request request,
             @Param(value = "id") String id,
             @Param(value = "replicas") String replicas) {
-        logger.info(request.getURI());
+        logger.info(request.getURI() + " type=" + request.getMethod());
         logger.debug(request.toString());
 
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        logger.debug("id=" + id);
-
-        ReplicaInfo replicaInfo;
+        RequestInfo requestInfo;
         try {
-            replicaInfo = new ReplicaInfo(replicas, topology.length);
+            requestInfo = new RequestInfo(id, replicas, topology.length, request.getHeader("Proxied"));
         } catch (IllegalArgumentException e) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-
-        logger.debug("ack=" + replicaInfo.getAck() + " from=" + replicaInfo.getFrom());
-
-        boolean proxied = request.getHeader("Proxied") != null;
-
-        logger.info("Proxied=" + proxied);
+        logger.debug("id = " + requestInfo.getId());
+        logger.debug("ack=" + requestInfo.getAck() + " from=" + requestInfo.getFrom());
+        logger.info("Proxied=" + requestInfo.isProxied());
 
         switch (request.getMethod()) {
             case Request.METHOD_GET:
                 logger.debug("case GET");
-                return proxied ?
+                return requestInfo.isProxied() ?
                         get(id) :
-                        proxyGet(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()));
+                        proxyGet(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()));
             case Request.METHOD_PUT:
                 logger.debug("case PUT");
-                return proxied ?
+                return requestInfo.isProxied() ?
                         put(id, request.getBody()) :
-                        proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), true, request.getBody());
+                        proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), true, request.getBody());
             case Request.METHOD_DELETE:
                 logger.debug("case DELETE");
-                return proxied ?
+                return requestInfo.isProxied() ?
                         delete(id) :
-                        proxyUpsert(id, replicaInfo.getAck(), getNodes(id, replicaInfo.getFrom()), false, Value.EMPTY_DATA);
+                        proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), false, Value.EMPTY_DATA);
         }
 
         logger.debug("Method not allowed");
@@ -112,73 +103,63 @@ public class MyKVService extends HttpServer implements KVService {
                     logger.info("Add to list " + resValue.toString());
                 } catch (NoSuchElementException e) {
                     logger.error("No such element", e);
-                    values.add(new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN));
+                    values.add(Value.UNKNOWN);
                 } catch (IOException e) {
                     logger.error("IO exception", e);
                 }
             } else {
                 try {
-                    Value resValue = internalGet(id, node);
-                    values.add(resValue);
-                    logger.info("Add to list " + resValue.toString());
-                } catch (NumberFormatException e) {
-                    logger.error("Wrong type of headers", e);
+                    final Response response = nodes.get(node).get("/v0/entity?id=" + id, "Proxied: true");
+                    switch (response.getStatus()) {
+                        case 500:
+                            logger.error("Bad answer, no ack");
+                        case 404:
+                            logger.info("Add to list unknown value");
+                            values.add(Value.UNKNOWN);
+                        default:
+                            byte[] data = response.getBody();
+                            long timestamp = Long.parseLong(response.getHeader("Timestamp"));
+                            String state = response.getHeader("State");
+                            Value value = new Value(data, timestamp, Value.stateCode.valueOf(state));
+                            values.add(value);
+                            logger.info("Add to list " + value.toString());
+                    }
                 } catch (Exception e) {
-                    logger.error("Bad answer, no ack", e);
+                    logger.error("Error on request, no ack", e);
                 }
             }
         }
-        if (values.stream().anyMatch(v -> v.getState() == Value.stateCode.DELETED)) {
-            logger.info("Value is deleted");
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        List<Value> present = values.stream()
-                .filter(v -> v.getState() == Value.stateCode.PRESENT || v.getState() == Value.stateCode.UNKNOWN)
-                .collect(Collectors.toList());
-        if (present.size() >= ack) {
+        if (values.size() >= ack) {
             logger.info("SUCCESS, " + values.size() + "/" + from.size());
-            Value max = present.stream()
-                    .max(Comparator.comparingLong(Value::getTimestamp)).get();
-            return max.getState() == Value.stateCode.UNKNOWN ?
-                    new Response(Response.NOT_FOUND, Response.EMPTY) :
-                    new Response(Response.OK, max.getData());
+            Value max = values.stream()
+                    .max(Comparator.comparingLong(Value::getTimestamp))
+                    .orElse(Value.UNKNOWN);
+            switch (max.getState()) {
+                case UNKNOWN:
+                case DELETED:
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                case PRESENT:
+                    return new Response(Response.OK, max.getData());
+            }
         }
         logger.info("FAIL, " + values.size() + "/" + from.size());
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
-    private Value internalGet(String id, String node) throws Exception {
-        logger.info("id=" + id);
-        final Response response = nodes.get(node).get("/v0/entity?id=" + id, "Proxied: true");
-        switch (response.getStatus()) {
-            case 500:
-                throw new Exception("Internal error on node");
-            case 404:
-                return new Value(Value.EMPTY_DATA, 0, Value.stateCode.UNKNOWN);
-            default:
-                byte[] res = response.getBody();
-                String timestampHeader = response.getHeader("Timestamp");
-                long timestamp = Long.parseLong(timestampHeader);
-                String state = response.getHeader("State");
-                return new Value(res, timestamp, Value.stateCode.valueOf(state));
-        }
-    }
-
     private Response get(String id) {
         logger.info("id=" + id);
-        Response response;
         try {
             byte[] res = dao.get(id.getBytes());
             Value value = serializer.deserialize(res);
-            response = new Response(Response.OK, value.getData());
+            Response response = new Response(Response.OK, value.getData());
             response.addHeader("Timestamp" + value.getTimestamp());
             response.addHeader("State" + value.getState());
+            return response;
         } catch (NoSuchElementException e) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        return response;
     }
 
     private Response proxyUpsert(String id, int ack, List<String> from, boolean put, byte[] value) {
@@ -223,8 +204,7 @@ public class MyKVService extends HttpServer implements KVService {
     private Response put(String id, byte[] value) {
         logger.info("id=" + id);
         try {
-            Value val = new Value(value);
-            dao.upsert(id.getBytes(), serializer.serialize(val));
+            dao.upsert(id.getBytes(), serializer.serialize(new Value(value)));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
@@ -234,8 +214,7 @@ public class MyKVService extends HttpServer implements KVService {
     private Response delete(String id) {
         logger.info("id=" + id);
         try {
-            Value val = new Value();
-            dao.upsert(id.getBytes(), serializer.serialize(val));
+            dao.upsert(id.getBytes(), serializer.serialize(new Value()));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
