@@ -75,9 +75,12 @@ public class MyKVService extends HttpServer implements KVService {
                         get(id) :
                         proxyGet(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()));
             case Request.METHOD_PUT:
+                //if request is proxied, then requestBody contains
+                //serialized value we need to put in the storage
                 if (requestInfo.isProxied()) {
                     return upsert(id, request.getBody());
                 }
+                //if not, then we need to proxy request to all nodes
                 try {
                     proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), new Value(request.getBody()));
                     return new Response(Response.CREATED, Response.EMPTY);
@@ -85,9 +88,12 @@ public class MyKVService extends HttpServer implements KVService {
                     return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
                 }
             case Request.METHOD_DELETE:
+                //if request is proxied, then requestBody contains
+                //serialized value we need to put in the storage
                 if (requestInfo.isProxied()) {
                     return upsert(id, request.getBody());
                 }
+                //if not, then we need to proxy request to all nodes
                 try {
                     proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), new Value());
                     return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -105,6 +111,7 @@ public class MyKVService extends HttpServer implements KVService {
         List<Value> values = new ArrayList<>();
         for (String node : from) {
             if (node.equals(me)) {
+                //if we have data, then we try to get it
                 try {
                     byte[] res = dao.get(id.getBytes());
                     Value resValue = serializer.deserialize(res);
@@ -117,6 +124,7 @@ public class MyKVService extends HttpServer implements KVService {
                     logger.error("IO exception", e);
                 }
             } else {
+                //else send GET request to other node
                 try {
                     final Response response = nodes.get(node).get("/v0/entity?id=" + id, "Proxied: true");
                     switch (response.getStatus()) {
@@ -180,6 +188,7 @@ public class MyKVService extends HttpServer implements KVService {
         byte[] serializedValue = serializer.serialize(value);
         for (String node : from) {
             if (node.equals(me)) {
+                //if we have data, then we try to upsert new value
                 try {
                     dao.upsert(id.getBytes(), serializedValue);
                     myAck++;
@@ -188,6 +197,7 @@ public class MyKVService extends HttpServer implements KVService {
                     logger.error("IOException with id=" + id, e);
                 }
             } else {
+                //else send PUT request with serialized value in body
                 try {
                     final Response response = nodes.get(node).put("/v0/entity?id=" + id, serializedValue, "Proxied: true");
                     if (response.getStatus() != 500) {
