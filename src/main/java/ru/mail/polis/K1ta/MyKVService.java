@@ -71,23 +71,32 @@ public class MyKVService extends HttpServer implements KVService {
 
         switch (request.getMethod()) {
             case Request.METHOD_GET:
-                logger.debug("case GET");
                 return requestInfo.isProxied() ?
                         get(id) :
                         proxyGet(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()));
             case Request.METHOD_PUT:
-                logger.debug("case PUT");
-                return requestInfo.isProxied() ?
-                        put(id, request.getBody()) :
-                        proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), true, request.getBody());
+                if (requestInfo.isProxied()) {
+                    return upsert(id, request.getBody());
+                }
+                try {
+                    proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), new Value(request.getBody()));
+                    return new Response(Response.CREATED, Response.EMPTY);
+                } catch (Exception e) {
+                    return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+                }
             case Request.METHOD_DELETE:
-                logger.debug("case DELETE");
-                return requestInfo.isProxied() ?
-                        delete(id) :
-                        proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), false, Value.EMPTY_DATA);
+                if (requestInfo.isProxied()) {
+                    return upsert(id, request.getBody());
+                }
+                try {
+                    proxyUpsert(id, requestInfo.getAck(), getNodes(id, requestInfo.getFrom()), new Value());
+                    return new Response(Response.ACCEPTED, Response.EMPTY);
+                } catch (Exception e) {
+                    return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+                }
         }
 
-        logger.debug("Method not allowed");
+        logger.info("Method not allowed");
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
@@ -116,13 +125,15 @@ public class MyKVService extends HttpServer implements KVService {
                         case 404:
                             logger.info("Add to list unknown value");
                             values.add(Value.UNKNOWN);
-                        default:
+                        case 200:
                             byte[] data = response.getBody();
                             long timestamp = Long.parseLong(response.getHeader("Timestamp"));
                             String state = response.getHeader("State");
                             Value value = new Value(data, timestamp, Value.stateCode.valueOf(state));
                             values.add(value);
                             logger.info("Add to list " + value.toString());
+                        default:
+                            logger.error("Response = " + response.getStatus() + ", no ack");
                     }
                 } catch (Exception e) {
                     logger.error("Error on request, no ack", e);
@@ -162,15 +173,15 @@ public class MyKVService extends HttpServer implements KVService {
         }
     }
 
-    private Response proxyUpsert(String id, int ack, List<String> from, boolean put, byte[] value) {
-        logger.info("id=" + id + " type=" + (put ? "PUT" : "DELETE"));
+    private void proxyUpsert(String id, int ack, List<String> from, Value value) throws Exception {
+        logger.info("id=" + id + " value state = " + value.getState());
         int myAck = 0;
 
-        Value val = put ? new Value(value) : new Value();
+        byte[] serializedValue = serializer.serialize(value);
         for (String node : from) {
             if (node.equals(me)) {
                 try {
-                    dao.upsert(id.getBytes(), serializer.serialize(val));
+                    dao.upsert(id.getBytes(), serializedValue);
                     myAck++;
                     logger.info("Get ack from " + node);
                 } catch (IOException e) {
@@ -178,9 +189,7 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    final Response response = put ?
-                            nodes.get(node).put("/v0/entity?id=" + id, value, "Proxied: true") :
-                            nodes.get(node).delete("/v0/entity?id=" + id, "Proxied: true");
+                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, serializedValue, "Proxied: true");
                     if (response.getStatus() != 500) {
                         myAck++;
                         logger.info("Get ack from " + node);
@@ -190,35 +199,21 @@ public class MyKVService extends HttpServer implements KVService {
                 }
             }
         }
-
-        if (myAck >= ack) {
-            logger.info("SUCCESS, " + myAck + "/" + from.size());
-            return put ?
-                    new Response(Response.CREATED, Response.EMPTY) :
-                    new Response(Response.ACCEPTED, Response.EMPTY);
+        if (myAck < ack) {
+            logger.info("FAIL, " + myAck + "/" + from.size());
+            throw new Exception("Not enough acks");
         }
-        logger.info("FAIL, " + myAck + "/" + from.size());
-        return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+        logger.info("SUCCESS, " + myAck + "/" + from.size());
     }
 
-    private Response put(String id, byte[] value) {
+    private Response upsert(String id, byte[] serializedValue) {
         logger.info("id=" + id);
         try {
-            dao.upsert(id.getBytes(), serializer.serialize(new Value(value)));
+            dao.upsert(id.getBytes(), serializedValue);
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    private Response delete(String id) {
-        logger.info("id=" + id);
-        try {
-            dao.upsert(id.getBytes(), serializer.serialize(new Value()));
-        } catch (IOException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
