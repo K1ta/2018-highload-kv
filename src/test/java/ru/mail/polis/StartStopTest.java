@@ -22,12 +22,17 @@ import one.nio.pool.PoolException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.function.Executable;
+import org.junit.platform.commons.util.ExceptionUtils;
 
 import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -75,10 +80,17 @@ class StartStopTest extends TestBase {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     void create() {
         assertTimeoutPreemptively(TIMEOUT, () -> {
             assertThrows(PoolException.class, this::status);
         });
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void createOnWindows() throws InterruptedException {
+        assertNotFinishesIn(TIMEOUT, this::status);
     }
 
     @Test
@@ -92,18 +104,52 @@ class StartStopTest extends TestBase {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     void stop() {
         assertTimeoutPreemptively(TIMEOUT, () -> {
-            kvService.start();
-            Thread.sleep(TimeUnit.SECONDS.toMillis(1));
-
-            assertEquals(200, status());
-
-            kvService.stop();
-            reset();
+            makeLifecycle();
 
             // Should not respond after stop
             assertThrows(PoolException.class, this::status);
         });
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void stopOnWindows() throws InterruptedException {
+        assertNotFinishesIn(TIMEOUT, () -> {
+            makeLifecycle();
+
+            // Should not respond after stop
+            status();
+        });
+    }
+
+    private void makeLifecycle() throws Exception {
+        kvService.start();
+        Thread.sleep(TimeUnit.SECONDS.toMillis(1));
+
+        assertEquals(200, status());
+
+        kvService.stop();
+        reset();
+    }
+
+    private static void assertNotFinishesIn(final Duration timeout, final Executable executable)
+    throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        new Thread(() -> {
+            try {
+                executable.execute();
+                latch.countDown();
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
+                ExceptionUtils.throwAsUncheckedException(throwable);
+            }
+        }).start();
+        boolean completedBeforeTimeout = latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        if (completedBeforeTimeout) {
+            fail("Executable has completed before timeout while should not have been");
+        }
     }
 }
