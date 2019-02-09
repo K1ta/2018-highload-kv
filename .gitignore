@@ -6,6 +6,7 @@
 !*.java
 !logback.xml
 !LOADTEST.md
+!*.lua
 
 # ...even if they are in subdirectories
 !*/
