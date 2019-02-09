@@ -4,6 +4,8 @@
 # But not Java files...
 !.gitignore
 !*.java
+!logback.xml
+!LOADTEST.md
 
 # ...even if they are in subdirectories
 !*/
