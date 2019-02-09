@@ -1,5 +1,60 @@
 ##До оптимизаций
+###PUT
 
+```
+$ wrk --latency -c4 -d10m -s scripts/put.lua http://localhost:8080
+Running 10m test @ http://localhost:8080
+  2 threads and 4 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     3.99ms    5.30ms 259.76ms   94.68%
+    Req/Sec   565.97     69.29   777.00     76.45%
+  Latency Distribution
+     50%    3.02ms
+     75%    4.53ms
+     90%    7.01ms
+     99%   16.29ms
+  675616 requests in 10.00m, 43.17MB read
+Requests/sec:   1125.86
+Transfer/sec:     73.66KB
+```
+
+###GET
+```
+$ wrk --latency -c4 -d10m -s scripts/get.lua http://localhost:8080
+Running 10m test @ http://localhost:8080
+  2 threads and 4 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     6.24ms   10.62ms 419.58ms   97.17%
+    Req/Sec   373.52    123.78   710.00     60.58%
+  Latency Distribution
+     50%    4.62ms
+     75%    7.48ms
+     90%   11.25ms
+     99%   22.66ms
+  445548 requests in 10.00m, 41.39MB read
+  Non-2xx or 3xx responses: 312296
+Requests/sec:    742.48
+Transfer/sec:     70.63KB
+```
+
+###GET-PUT
+```
+$ wrk --latency -c4 -d10m -s scripts/get-put.lua http://localhost:8080
+Running 10m test @ http://localhost:8080
+  2 threads and 4 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.23ms   12.48ms 473.58ms   98.79%
+    Req/Sec   463.67     50.57   680.00     73.20%
+  Latency Distribution
+     50%    3.71ms
+     75%    5.93ms
+     90%    9.02ms
+     99%   18.73ms
+  552780 requests in 10.00m, 44.24MB read
+  Non-2xx or 3xx responses: 183823
+Requests/sec:    921.20
+Transfer/sec:     75.49KB
+```
 ##После оптимизаций
 ###PUT
 ```
@@ -36,7 +91,7 @@ Running 10m test @ http://localhost:8080
 Requests/sec:   5307.65
 Transfer/sec:    836.45KB
 ```
-###PUT-GET
+###GET-PUT
 ```
 $ wrk --latency -c4 -d10m -s scripts/get-put.lua http://localhost:8080
 Running 10m test @ http://localhost:8080
