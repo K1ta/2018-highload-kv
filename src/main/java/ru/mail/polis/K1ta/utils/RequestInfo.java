@@ -47,4 +47,9 @@ public class RequestInfo {
     public boolean isProxied() {
         return proxied;
     }
+
+    @Override
+    public String toString() {
+        return "id=" + id + " ack=" + ack + " from=" + from + " proxied=" + proxied;
+    }
 }

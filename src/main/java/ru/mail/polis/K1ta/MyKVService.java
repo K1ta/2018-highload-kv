@@ -32,7 +32,7 @@ public class MyKVService extends HttpServer implements KVService {
                 o -> o,
                 o -> new HttpClient(new ConnectionString(o))));
         serializer = ValueSerializer.getInstance();
-        logger = LoggerFactory.getLogger(MyKVService.class);
+        logger = LoggerFactory.getLogger(MyKVService.class.getSimpleName() + "-" + port);
         logger.info("Service created, me=" + me);
     }
 
@@ -56,18 +56,16 @@ public class MyKVService extends HttpServer implements KVService {
             Request request,
             @Param(value = "id") String id,
             @Param(value = "replicas") String replicas) {
-        logger.info(request.getURI() + " type=" + request.getMethod());
         logger.debug(request.toString());
 
         RequestInfo requestInfo;
         try {
             requestInfo = new RequestInfo(id, replicas, topology.length, request.getHeader("Proxied"));
         } catch (IllegalArgumentException e) {
+            logger.error("Invalid form of request with id=" + id, e);
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        logger.debug("id = " + requestInfo.getId());
-        logger.debug("ack=" + requestInfo.getAck() + " from=" + requestInfo.getFrom());
-        logger.info("Proxied=" + requestInfo.isProxied());
+        logger.info(requestInfo.toString() + " method=" + request.getMethod());
 
         switch (request.getMethod()) {
             case Request.METHOD_GET:
@@ -107,7 +105,6 @@ public class MyKVService extends HttpServer implements KVService {
     }
 
     private Response proxyGet(String id, int ack, List<String> from) {
-        logger.info("id=" + id);
         List<Value> values = new ArrayList<>();
         for (String node : from) {
             if (node.equals(me)) {
@@ -118,7 +115,7 @@ public class MyKVService extends HttpServer implements KVService {
                     values.add(resValue);
                     logger.info("Add to list " + resValue.toString());
                 } catch (NoSuchElementException e) {
-                    logger.error("No such element", e);
+                    logger.error("I have no such element");
                     values.add(Value.UNKNOWN);
                 } catch (IOException e) {
                     logger.error("IO exception", e);
@@ -129,22 +126,25 @@ public class MyKVService extends HttpServer implements KVService {
                     final Response response = nodes.get(node).get("/v0/entity?id=" + id, "Proxied: true");
                     switch (response.getStatus()) {
                         case 500:
-                            logger.error("Bad answer, no ack");
+                            logger.error("Bad answer, no ack from node " + node);
+                            break;
                         case 404:
-                            logger.info("Add to list unknown value");
+                            logger.debug("Unknown value from node " + node);
                             values.add(Value.UNKNOWN);
+                            break;
                         case 200:
                             byte[] data = response.getBody();
                             long timestamp = Long.parseLong(response.getHeader("Timestamp"));
                             String state = response.getHeader("State");
                             Value value = new Value(data, timestamp, Value.stateCode.valueOf(state));
                             values.add(value);
-                            logger.info("Add to list " + value.toString());
+                            logger.debug("Add to list " + value.toString() + " from node " + node);
+                            break;
                         default:
-                            logger.error("Response = " + response.getStatus() + ", no ack");
+                            logger.error("Response = " + response.getStatus() + ", no ack from node " + node);
                     }
                 } catch (Exception e) {
-                    logger.error("Error on request, no ack", e);
+                    logger.error("Error on request, no ack from node " + node, e);
                 }
             }
         }
@@ -156,8 +156,10 @@ public class MyKVService extends HttpServer implements KVService {
             switch (max.getState()) {
                 case UNKNOWN:
                 case DELETED:
+                    logger.info("Value not found");
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 case PRESENT:
+                    logger.info("Return value");
                     return new Response(Response.OK, max.getData());
             }
         }
@@ -166,23 +168,24 @@ public class MyKVService extends HttpServer implements KVService {
     }
 
     private Response get(String id) {
-        logger.info("id=" + id);
         try {
             byte[] res = dao.get(id.getBytes());
             Value value = serializer.deserialize(res);
             Response response = new Response(Response.OK, value.getData());
             response.addHeader("Timestamp" + value.getTimestamp());
             response.addHeader("State" + value.getState());
+            logger.info("Return element");
             return response;
         } catch (NoSuchElementException e) {
+            logger.info("I have no such element");
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         } catch (IOException e) {
+            logger.error("Exception on value with id" + id, e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
     private void proxyUpsert(String id, int ack, List<String> from, Value value) throws Exception {
-        logger.info("id=" + id + " value state = " + value.getState());
         int myAck = 0;
 
         byte[] serializedValue = serializer.serialize(value);
@@ -192,7 +195,7 @@ public class MyKVService extends HttpServer implements KVService {
                 try {
                     dao.upsert(id.getBytes(), serializedValue);
                     myAck++;
-                    logger.info("Get ack from " + node);
+                    logger.debug("Get ack from " + node);
                 } catch (IOException e) {
                     logger.error("IOException with id=" + id, e);
                 }
@@ -202,7 +205,7 @@ public class MyKVService extends HttpServer implements KVService {
                     final Response response = nodes.get(node).put("/v0/entity?id=" + id, serializedValue, "Proxied: true");
                     if (response.getStatus() != 500) {
                         myAck++;
-                        logger.info("Get ack from " + node);
+                        logger.debug("Get ack from " + node);
                     }
                 } catch (Exception e) {
                     logger.error("Bad answer, no ack from node " + node, e);
@@ -217,12 +220,13 @@ public class MyKVService extends HttpServer implements KVService {
     }
 
     private Response upsert(String id, byte[] serializedValue) {
-        logger.info("id=" + id);
         try {
             dao.upsert(id.getBytes(), serializedValue);
         } catch (IOException e) {
+            logger.error("Error on creating value with id=" + id, e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
+        logger.info("value is upserted");
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
